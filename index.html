@@ -3,93 +3,96 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Safe Baby Monitor DIY</title>
+    <title>Safe Baby Monitor v3</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { font-family: system-ui, sans-serif; text-align: center; background: #121212; color: #e0e0e0; margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; }
-        .card { width: 100%; max-width: 450px; border: 1px solid #333; padding: 25px; border-radius: 25px; background: #1e1e1e; box-sizing: border-box; }
-        h2 { font-size: 1.8em; margin-bottom: 20px; color: #fff; }
+        body { font-family: system-ui, sans-serif; text-align: center; background: #121212; color: #e0e0e0; margin: 0; padding: 15px; }
+        .card { width: 100%; max-width: 450px; border: 1px solid #333; padding: 25px; border-radius: 25px; background: #1e1e1e; margin: auto; box-sizing: border-box; }
         video { width: 100%; border-radius: 15px; margin-top: 15px; background: #000; border: 1px solid #444; min-height: 200px; }
         input { padding: 15px; border-radius: 12px; border: 1px solid #444; width: 90%; margin: 15px 0; background: #2a2a2a; color: white; text-align: center; font-size: 1.1em; }
-        .btn { padding: 18px 30px; border-radius: 15px; border: none; cursor: pointer; font-weight: bold; margin: 10px 0; width: 100%; font-size: 1.1em; }
+        .btn { padding: 18px; border-radius: 15px; border: none; cursor: pointer; font-weight: bold; margin: 10px 0; width: 100%; font-size: 1.1em; }
         .btn-baby { background: #ff4757; color: white; }
         .btn-parent { background: #2ed573; color: white; }
         .status { margin: 15px 0; font-size: 1em; color: #ffa502; font-weight: 500; min-height: 1.5em; }
-        #local-video { transform: scaleX(-1); } /* אפקט מראה למצלמה הקדמית */
+        #local-video { display: none; }
     </style>
 </head>
 <body>
     <div class="card">
         <h2>מוניטור בטוח 🔒</h2>
-        
         <input type="text" id="secret-id" placeholder="הכנס מזהה סודי (למשל: baby77)">
         
         <div id="mode-selection">
-            <button class="btn btn-baby" onclick="setupBaby()">זה הטלפון (המצלמה)</button>
-            <button class="btn btn-parent" onclick="setupParent()">זה הטאבלט (הצופה)</button>
+            <button class="btn btn-baby" onclick="setupBaby()">זה הטלפון (מצלמה אחורית)</button>
+            <button class="btn btn-parent" onclick="setupParent()">זה הטאבלט (צופה)</button>
         </div>
 
         <div id="monitor-area">
             <p class="status" id="status-msg">ממתין לבחירה...</p>
-            <video id="remote-video" autoplay playsinline style="display:none;"></video>
-            <video id="local-video" autoplay muted playsinline style="display:none;"></video>
+            <video id="remote-video" autoplay playsinline></video>
+            <video id="local-video" autoplay muted playsinline></video>
         </div>
     </div>
 
     <script>
         let peer = null;
-        let wakeLock = null;
+        let currentStream = null;
 
-        async function stayAwake() {
-            if ('wakeLock' in navigator) {
-                try { wakeLock = await navigator.wakeLock.request('screen'); } catch (err) {}
+        function cleanup() {
+            if (peer) {
+                peer.destroy();
+                peer = null;
             }
         }
 
-        function initPeer(id) {
+        async function initPeer(id) {
+            cleanup(); // ניקוי חיבורים קודמים
             peer = new Peer(id);
-            peer.on('open', (id) => {
-                document.getElementById('status-msg').innerText = "מוכן לחיבור! המזהה: " + id;
-                stayAwake();
+            
+            peer.on('open', (openedId) => {
+                document.getElementById('status-msg').innerText = "מוכן! המזהה פעיל: " + openedId;
             });
+
             peer.on('error', (err) => {
-                console.error(err);
-                document.getElementById('status-msg').innerText = "שגיאה: המזהה תפוס או שאין אינטרנט.";
+                if (err.type === 'unavailable-id') {
+                    document.getElementById('status-msg').innerText = "שגיאה: המזהה תפוס. נסה להוסיף ספרה לשם.";
+                } else {
+                    document.getElementById('status-msg').innerText = "שגיאה בחיבור: " + err.type;
+                }
             });
         }
 
-        // --- צד התינוק (המצלמה) ---
+        // --- טלפון (תינוק) ---
         async function setupBaby() {
             const id = document.getElementById('secret-id').value;
             if (!id) return alert("בבקשה הכנס מזהה סודי!");
 
             document.getElementById('mode-selection').style.display = 'none';
-            document.getElementById('status-msg').innerText = "מבקש גישה למצלמה...";
+            document.getElementById('status-msg').innerText = "מפעיל מצלמה אחורית...";
 
             try {
-                // בקשת המצלמה מיד כדי שיופיע חלון האישור
-                const stream = await navigator.mediaDevices.getUserMedia({ 
-                    video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } }, 
+                // שימוש במצלמה אחורית (environment)
+                currentStream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "environment" }, 
                     audio: true 
                 });
                 
-                document.getElementById('local-video').srcObject = stream;
+                document.getElementById('local-video').srcObject = currentStream;
                 document.getElementById('local-video').style.display = 'block';
-                document.getElementById('status-msg').innerText = "המצלמה פועלת! ממתין להורה...";
                 
                 initPeer(id);
 
                 peer.on('call', (call) => {
-                    call.answer(stream);
-                    document.getElementById('status-msg').innerText = "ההורה התחבר וצופה!";
+                    call.answer(currentStream);
+                    document.getElementById('status-msg').innerText = "מחובר! ההורה צופה כרגע.";
                 });
 
             } catch (err) {
-                document.getElementById('status-msg').innerText = "שגיאה: חייב לאשר מצלמה ומיקרופון.";
+                document.getElementById('status-msg').innerText = "שגיאה בגישה למצלמה: " + err.message;
             }
         }
 
-        // --- צד ההורה (הצופה) ---
+        // --- טאבלט (הורה) ---
         function setupParent() {
             const id = document.getElementById('secret-id').value;
             if (!id) return alert("בבקשה הכנס מזהה סודי!");
@@ -97,18 +100,22 @@
             document.getElementById('mode-selection').style.display = 'none';
             document.getElementById('status-msg').innerText = "מתחבר...";
             
-            initPeer(id + "-parent");
+            // המזהה של ההורה חייב להיות שונה במעט משל התינוק
+            initPeer(id + "-viewer");
 
             setTimeout(() => {
-                document.getElementById('status-msg').innerText = "מנסה להתקשר למצלמה...";
+                document.getElementById('status-msg').innerText = "מתקשר למצלמה...";
                 const call = peer.call(id, null);
                 
                 call.on('stream', (remoteStream) => {
                     document.getElementById('remote-video').srcObject = remoteStream;
-                    document.getElementById('remote-video').style.display = 'block';
                     document.getElementById('status-msg').innerText = "שידור חי פעיל!";
                 });
-            }, 2500); // מחכים קצת שהשרת יזהה את שני המכשירים
+
+                call.on('error', (err) => {
+                    document.getElementById('status-msg').innerText = "השיחה נכשלה. וודא שהטלפון דולק ומחובר.";
+                });
+            }, 3000);
         }
     </script>
 </body>

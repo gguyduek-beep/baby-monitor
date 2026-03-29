@@ -2,49 +2,44 @@
 <html dir="rtl" lang="he">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     <title>Safe Baby Monitor DIY</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { font-family: system-ui, sans-serif; text-align: center; background: #121212; color: #e0e0e0; margin: 0; padding: 20px; }
-        .card { max-width: 500px; margin: auto; border: 1px solid #333; padding: 20px; border-radius: 20px; background: #1e1e1e; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
-        video { width: 100%; border-radius: 15px; margin-top: 15px; background: #000; border: 1px solid #444; }
-        input { padding: 12px; border-radius: 8px; border: 1px solid #444; width: 80%; margin: 10px 0; background: #2a2a2a; color: white; text-align: center; }
-        .btn { padding: 12px 25px; border-radius: 10px; border: none; cursor: pointer; font-weight: bold; margin: 5px; transition: 0.3s; }
+        body { font-family: system-ui, sans-serif; text-align: center; background: #121212; color: #e0e0e0; margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; }
+        .card { width: 100%; max-width: 450px; border: 1px solid #333; padding: 25px; border-radius: 25px; background: #1e1e1e; box-sizing: border-box; }
+        h2 { font-size: 1.8em; margin-bottom: 20px; color: #fff; }
+        video { width: 100%; border-radius: 15px; margin-top: 15px; background: #000; border: 1px solid #444; min-height: 200px; }
+        input { padding: 15px; border-radius: 12px; border: 1px solid #444; width: 90%; margin: 15px 0; background: #2a2a2a; color: white; text-align: center; font-size: 1.1em; }
+        .btn { padding: 18px 30px; border-radius: 15px; border: none; cursor: pointer; font-weight: bold; margin: 10px 0; width: 100%; font-size: 1.1em; }
         .btn-baby { background: #ff4757; color: white; }
         .btn-parent { background: #2ed573; color: white; }
-        .status { margin-top: 15px; font-size: 0.9em; color: #ffa502; }
-        #remote-video { display: none; } /* יופיע רק אצל ההורה */
+        .status { margin: 15px 0; font-size: 1em; color: #ffa502; font-weight: 500; min-height: 1.5em; }
+        #local-video { transform: scaleX(-1); } /* אפקט מראה למצלמה הקדמית */
     </style>
 </head>
 <body>
     <div class="card">
         <h2>מוניטור בטוח 🔒</h2>
         
-        <p>1. בחר מזהה סודי (למשל: mybaby2026):</p>
-        <input type="text" id="secret-id" placeholder="הכנס מזהה סודי">
+        <input type="text" id="secret-id" placeholder="הכנס מזהה סודי (למשל: baby77)">
         
-        <hr style="border: 0.5px solid #333; margin: 20px 0;">
-
         <div id="mode-selection">
-            <p>2. בחר את תפקיד המכשיר הנוכחי:</p>
             <button class="btn btn-baby" onclick="setupBaby()">זה הטלפון (המצלמה)</button>
             <button class="btn btn-parent" onclick="setupParent()">זה הטאבלט (הצופה)</button>
         </div>
 
         <div id="monitor-area">
             <p class="status" id="status-msg">ממתין לבחירה...</p>
-            <video id="remote-video" autoplay playsinline></video>
-            <video id="local-video" autoplay muted playsinline></video>
+            <video id="remote-video" autoplay playsinline style="display:none;"></video>
+            <video id="local-video" autoplay muted playsinline style="display:none;"></video>
         </div>
     </div>
 
     <script>
         let peer = null;
-        let localStream = null;
         let wakeLock = null;
 
-        // מניעת כיבוי מסך
         async function stayAwake() {
             if ('wakeLock' in navigator) {
                 try { wakeLock = await navigator.wakeLock.request('screen'); } catch (err) {}
@@ -53,53 +48,67 @@
 
         function initPeer(id) {
             peer = new Peer(id);
-            peer.on('open', () => {
-                document.getElementById('status-msg').innerText = "מחובר לשרת האבטחה. המזהה שלך פעיל.";
+            peer.on('open', (id) => {
+                document.getElementById('status-msg').innerText = "מוכן לחיבור! המזהה: " + id;
                 stayAwake();
             });
             peer.on('error', (err) => {
-                alert("שגיאה: המזהה הזה תפוס או שיש בעיית חיבור.");
+                console.error(err);
+                document.getElementById('status-msg').innerText = "שגיאה: המזהה תפוס או שאין אינטרנט.";
             });
         }
 
-        // הגדרת הטלפון כ"תינוק"
-        function setupBaby() {
+        // --- צד התינוק (המצלמה) ---
+        async function setupBaby() {
             const id = document.getElementById('secret-id').value;
-            if (!id) return alert("חייב להכניס מזהה סודי!");
-            
-            initPeer(id);
-            document.getElementById('mode-selection').style.display = 'none';
-            document.getElementById('status-msg').innerText = "הטלפון משדר... אל תסגור את הדפדפן.";
+            if (!id) return alert("בבקשה הכנס מזהה סודי!");
 
-            peer.on('call', (call) => {
-                // אבטחה: כאן אפשר להוסיף אימות נוסף אם רוצים
-                navigator.mediaDevices.getUserMedia({video: { facingMode: "user" }, audio: true})
-                .then((stream) => {
-                    localStream = stream;
-                    document.getElementById('local-video').srcObject = stream;
-                    call.answer(stream);
+            document.getElementById('mode-selection').style.display = 'none';
+            document.getElementById('status-msg').innerText = "מבקש גישה למצלמה...";
+
+            try {
+                // בקשת המצלמה מיד כדי שיופיע חלון האישור
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    video: { facingMode: "user", width: { ideal: 1280 }, height: { ideal: 720 } }, 
+                    audio: true 
                 });
-            });
+                
+                document.getElementById('local-video').srcObject = stream;
+                document.getElementById('local-video').style.display = 'block';
+                document.getElementById('status-msg').innerText = "המצלמה פועלת! ממתין להורה...";
+                
+                initPeer(id);
+
+                peer.on('call', (call) => {
+                    call.answer(stream);
+                    document.getElementById('status-msg').innerText = "ההורה התחבר וצופה!";
+                });
+
+            } catch (err) {
+                document.getElementById('status-msg').innerText = "שגיאה: חייב לאשר מצלמה ומיקרופון.";
+            }
         }
 
-        // הגדרת הטאבלט כ"הורה"
+        // --- צד ההורה (הצופה) ---
         function setupParent() {
             const id = document.getElementById('secret-id').value;
-            if (!id) return alert("חייב להכניס מזהה סודי!");
-            
-            initPeer(id + "-parent"); // מזהה שונה לצופה
+            if (!id) return alert("בבקשה הכנס מזהה סודי!");
+
             document.getElementById('mode-selection').style.display = 'none';
-            document.getElementById('remote-video').style.display = 'block';
-            document.getElementById('local-video').style.display = 'none';
+            document.getElementById('status-msg').innerText = "מתחבר...";
             
+            initPeer(id + "-parent");
+
             setTimeout(() => {
-                document.getElementById('status-msg').innerText = "מנסה להתחבר למצלמה...";
+                document.getElementById('status-msg').innerText = "מנסה להתקשר למצלמה...";
                 const call = peer.call(id, null);
+                
                 call.on('stream', (remoteStream) => {
                     document.getElementById('remote-video').srcObject = remoteStream;
+                    document.getElementById('remote-video').style.display = 'block';
                     document.getElementById('status-msg').innerText = "שידור חי פעיל!";
                 });
-            }, 2000);
+            }, 2500); // מחכים קצת שהשרת יזהה את שני המכשירים
         }
     </script>
 </body>

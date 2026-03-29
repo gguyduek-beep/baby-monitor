@@ -3,113 +3,80 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Baby Monitor v6 - Stable</title>
+    <title>Baby Monitor Debug v7</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { font-family: sans-serif; background: #000; color: #fff; text-align: center; padding: 10px; }
-        .box { max-width: 400px; margin: 20px auto; background: #111; padding: 20px; border: 2px solid #333; border-radius: 20px; }
-        video { width: 100%; border-radius: 10px; background: #222; margin: 10px 0; min-height: 200px; }
-        .btn { width: 100%; padding: 15px; margin: 5px 0; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; }
+        body { font-family: sans-serif; background: #1a1a1a; color: #fff; text-align: center; padding: 20px; }
+        .box { max-width: 400px; margin: auto; background: #2a2a2a; padding: 20px; border-radius: 20px; border: 1px solid #444; }
+        video { width: 100%; border-radius: 10px; background: #000; margin-top: 10px; min-height: 200px; }
+        button { width: 100%; padding: 15px; margin: 10px 0; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; color: white; }
         input { width: 80%; padding: 12px; margin: 10px 0; border-radius: 8px; text-align: center; }
-        #status { color: #ff9f43; font-weight: bold; padding: 10px; }
-        .debug { font-size: 10px; color: #555; text-align: left; height: 50px; overflow: auto; }
+        #status { color: #fbbf24; padding: 10px; font-weight: bold; }
     </style>
 </head>
 <body>
     <div class="box">
-        <h3>מוניטור ביתי 👶</h3>
-        <input type="text" id="sid" placeholder="מזהה סודי (למשל: 1234)">
+        <h3>מוניטור בטוח - ניסיון אחרון 👶</h3>
+        <input type="text" id="sid" placeholder="מזהה קצר (למשל: 5555)">
+        <div id="status">ממתין...</div>
         
-        <div id="controls">
-            <button class="btn" style="background:#e74c3c; color:white" onclick="startCamera()">הפעל מצלמה (טלפון)</button>
-            <button class="btn" style="background:#2ecc71; color:white" onclick="startParent()">הפעל צופה (טאבלט)</button>
-        </div>
-
-        <div id="status">מוכן...</div>
+        <button onclick="startBaby()" style="background: #e74c3c;">זה הטלפון (משדר)</button>
+        <button onclick="startParent()" style="background: #2ecc71;">זה הטאבלט (צופה)</button>
+        
         <video id="v" autoplay playsinline muted></video>
-        <button id="audioBtn" class="btn" style="display:none; background:#f1c40f" onclick="unmute()">לחץ כאן לשמיעת אודיו 🔊</button>
-        <div id="dbg" class="debug"></div>
+        <button id="audioBtn" style="display:none; background:#f1c40f; color:black" onclick="document.getElementById('v').muted=false; this.style.display='none'">הפעל סאונד 🔊</button>
     </div>
 
     <script>
-        const status = document.getElementById('status');
-        const dbg = document.getElementById('dbg');
         let peer = null;
-        let myStream = null;
+        const status = document.getElementById('status');
 
-        function log(m) { dbg.innerHTML += m + "<br>"; dbg.scrollTop = dbg.scrollHeight; }
-
-        const iceConfig = {
-            config: { 'iceServers': [
-                { 'urls': 'stun:stun.l.google.com:19302' },
-                { 'urls': 'stun:stun1.l.google.com:19302' },
-                { 'urls': 'stun:stun2.l.google.com:19302' },
-                { 'urls': 'stun:global.stun.twilio.com:3478' }
-            ] }
-        };
-
-        // --- מצב טלפון (מצלמה) ---
-        async function startCamera() {
+        function startBaby() {
             const id = document.getElementById('sid').value;
-            if(!id) return alert("הכנס מזהה!");
-            status.innerText = "פותח מצלמה...";
+            peer = new Peer(id);
+            peer.on('open', () => status.innerText = "הטלפון מוכן! מזהה: " + id);
             
-            try {
-                myStream = await navigator.mediaDevices.getUserMedia({video: {facingMode:"environment"}, audio:true});
-                document.getElementById('v').srcObject = myStream;
-                document.getElementById('controls').style.display = 'none';
-                
-                peer = new Peer(id, iceConfig);
-                peer.on('open', () => status.innerText = "המצלמה באוויר! המזהה: " + id);
-                peer.on('call', (call) => {
-                    log("שיחה נכנסת! עונה...");
-                    status.innerText = "ההורה התחבר ✅";
-                    call.answer(myStream);
+            navigator.mediaDevices.getUserMedia({video: {facingMode:"environment"}, audio:true})
+            .then(stream => {
+                document.getElementById('v').srcObject = stream;
+                peer.on('call', call => {
+                    status.innerText = "שיחה נכנסת! עונה...";
+                    call.answer(stream);
                 });
-            } catch(e) { status.innerText = "שגיאת מצלמה: " + e.message; }
+            });
         }
 
-        // --- מצב טאבלט (צופה) ---
         function startParent() {
             const id = document.getElementById('sid').value;
-            if(!id) return alert("הכנס מזהה!");
-            document.getElementById('controls').style.display = 'none';
-            status.innerText = "מתחבר...";
-
-            peer = new Peer(id + "-parent", iceConfig);
+            peer = new Peer(id + "-parent");
             peer.on('open', () => {
-                log("מחובר לשרת. מתחיל ניסיונות חיוג...");
-                aggressiveCall(id);
+                status.innerText = "מחייג...";
+                makeCall(id);
             });
         }
 
-        function aggressiveCall(targetId) {
-            status.innerText = "מנסה להתחבר למצלמה...";
+        function makeCall(targetId) {
             const call = peer.call(targetId, null);
-            
-            call.on('stream', (stream) => {
-                log("קיבלתי שידור! ✅");
-                status.innerText = "שידור חי!";
-                const video = document.getElementById('v');
-                video.srcObject = stream;
-                video.play();
+            if (!call) {
+                status.innerText = "חיוג נכשל. מנסה שוב...";
+                setTimeout(() => makeCall(targetId), 3000);
+                return;
+            }
+            call.on('stream', stream => {
+                status.innerText = "שידור חי! ✅";
+                const v = document.getElementById('v');
+                v.srcObject = stream;
+                v.play();
                 document.getElementById('audioBtn').style.display = 'block';
             });
-
-            // אם אין שידור תוך 5 שניות, סוגר ומנסה שוב
+            // אם אחרי 5 שניות לא ענה
             setTimeout(() => {
                 if (!document.getElementById('v').srcObject) {
-                    log("ניסיון נכשל, מנסה שוב...");
+                    status.innerText = "אין תגובה. מנסה שוב...";
                     call.close();
-                    aggressiveCall(targetId);
+                    makeCall(targetId);
                 }
             }, 5000);
-        }
-
-        function unmute() {
-            const v = document.getElementById('v');
-            v.muted = false;
-            document.getElementById('audioBtn').style.display = 'none';
         }
     </script>
 </body>

@@ -3,101 +3,113 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ultimate Baby Monitor 2026</title>
+    <title>Baby Monitor v6 - Stable</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { font-family: sans-serif; background: #1a1a2e; color: white; text-align: center; padding: 20px; }
-        .box { max-width: 450px; margin: auto; background: #16213e; padding: 25px; border-radius: 25px; border: 2px solid #0f3460; }
-        video { width: 100%; border-radius: 15px; background: black; margin-top: 15px; min-height: 250px; }
-        .btn { width: 100%; padding: 15px; margin: 10px 0; border-radius: 12px; border: none; font-weight: bold; cursor: pointer; font-size: 1.1em; }
-        input { width: 90%; padding: 12px; margin: 10px 0; border-radius: 8px; border: 1px solid #444; background: #0f3460; color: white; text-align: center; }
-        #status { padding: 10px; color: #e94560; font-weight: bold; min-height: 25px; }
-        .small-id { font-size: 0.8em; color: #aaa; margin-top: 5px; }
+        body { font-family: sans-serif; background: #000; color: #fff; text-align: center; padding: 10px; }
+        .box { max-width: 400px; margin: 20px auto; background: #111; padding: 20px; border: 2px solid #333; border-radius: 20px; }
+        video { width: 100%; border-radius: 10px; background: #222; margin: 10px 0; min-height: 200px; }
+        .btn { width: 100%; padding: 15px; margin: 5px 0; border-radius: 10px; border: none; font-weight: bold; cursor: pointer; }
+        input { width: 80%; padding: 12px; margin: 10px 0; border-radius: 8px; text-align: center; }
+        #status { color: #ff9f43; font-weight: bold; padding: 10px; }
+        .debug { font-size: 10px; color: #555; text-align: left; height: 50px; overflow: auto; }
     </style>
 </head>
 <body>
     <div class="box">
-        <h2>מוניטור בטוח v5 🔒</h2>
-        <div id="status">מתחבר לשרת...</div>
+        <h3>מוניטור ביתי 👶</h3>
+        <input type="text" id="sid" placeholder="מזהה סודי (למשל: 1234)">
         
-        <div id="setup-ui">
-            <p>המזהה של המכשיר הזה:</p>
-            <div id="my-id" style="font-size: 1.5em; color: #00d2ff; font-weight: bold;">טוען...</div>
-            <hr style="border: 0.5px solid #444; margin: 20px 0;">
-            <button class="btn" style="background: #e94560; color: white;" onclick="beCamera()">זה הטלפון (מצלמה)</button>
-            <hr style="border: 0.5px solid #444; margin: 20px 0;">
-            <p>להורה: הכנס את המזהה מהטלפון:</p>
-            <input type="text" id="target-id" placeholder="הכנס כאן את הקוד">
-            <button class="btn" style="background: #00d2ff; color: white;" onclick="beParent()">זה הטאבלט (הורה)</button>
+        <div id="controls">
+            <button class="btn" style="background:#e74c3c; color:white" onclick="startCamera()">הפעל מצלמה (טלפון)</button>
+            <button class="btn" style="background:#2ecc71; color:white" onclick="startParent()">הפעל צופה (טאבלט)</button>
         </div>
 
+        <div id="status">מוכן...</div>
         <video id="v" autoplay playsinline muted></video>
-        <button id="unmute-btn" class="btn" style="display:none; background: #ff9f43;" onclick="document.getElementById('v').muted=false; this.style.display='none';">שמע אודיו (Unmute)</button>
+        <button id="audioBtn" class="btn" style="display:none; background:#f1c40f" onclick="unmute()">לחץ כאן לשמיעת אודיו 🔊</button>
+        <div id="dbg" class="debug"></div>
     </div>
 
     <script>
         const status = document.getElementById('status');
-        const myIdDisplay = document.getElementById('my-id');
+        const dbg = document.getElementById('dbg');
         let peer = null;
-        let localStream = null;
+        let myStream = null;
 
-        // שרתי גיבוי של גוגל
-        const config = { config: { 'iceServers': [{ 'urls': 'stun:stun.l.google.com:19302' }, { 'urls': 'stun:stun1.l.google.com:19302' }] } };
+        function log(m) { dbg.innerHTML += m + "<br>"; dbg.scrollTop = dbg.scrollHeight; }
 
-        // יצירת Peer עם מזהה רנדומלי כדי למנוע כפילויות בעולם
-        peer = new Peer(config);
+        const iceConfig = {
+            config: { 'iceServers': [
+                { 'urls': 'stun:stun.l.google.com:19302' },
+                { 'urls': 'stun:stun1.l.google.com:19302' },
+                { 'urls': 'stun:stun2.l.google.com:19302' },
+                { 'urls': 'stun:global.stun.twilio.com:3478' }
+            ] }
+        };
 
-        peer.on('open', (id) => {
-            status.innerText = "מחובר לשרת!";
-            myIdDisplay.innerText = id;
-        });
-
-        peer.on('error', (err) => {
-            status.innerText = "שגיאה: " + err.type;
-            console.error(err);
-        });
-
-        // --- צד המצלמה (הטלפון) ---
-        async function beCamera() {
-            status.innerText = "מפעיל מצלמה...";
+        // --- מצב טלפון (מצלמה) ---
+        async function startCamera() {
+            const id = document.getElementById('sid').value;
+            if(!id) return alert("הכנס מזהה!");
+            status.innerText = "פותח מצלמה...";
+            
             try {
-                localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" }, audio: true });
-                document.getElementById('v').srcObject = localStream;
-                document.getElementById('setup-ui').style.display = 'none';
-                status.innerText = "המצלמה פועלת. ההורה יכול להתחבר.";
-
+                myStream = await navigator.mediaDevices.getUserMedia({video: {facingMode:"environment"}, audio:true});
+                document.getElementById('v').srcObject = myStream;
+                document.getElementById('controls').style.display = 'none';
+                
+                peer = new Peer(id, iceConfig);
+                peer.on('open', () => status.innerText = "המצלמה באוויר! המזהה: " + id);
                 peer.on('call', (call) => {
-                    status.innerText = "שידור חי התחיל!";
-                    call.answer(localStream);
+                    log("שיחה נכנסת! עונה...");
+                    status.innerText = "ההורה התחבר ✅";
+                    call.answer(myStream);
                 });
-            } catch (e) { status.innerText = "שגיאת מצלמה: " + e.message; }
+            } catch(e) { status.innerText = "שגיאת מצלמה: " + e.message; }
         }
 
-        // --- צד ההורה (הטאבלט) ---
-        function beParent() {
-            const target = document.getElementById('target-id').value;
-            if (!target) return alert("הכנס מזהה!");
-            
-            status.innerText = "מתקשר למצלמה...";
-            document.getElementById('setup-ui').style.display = 'none';
+        // --- מצב טאבלט (צופה) ---
+        function startParent() {
+            const id = document.getElementById('sid').value;
+            if(!id) return alert("הכנס מזהה!");
+            document.getElementById('controls').style.display = 'none';
+            status.innerText = "מתחבר...";
 
-            const call = peer.call(target, null);
+            peer = new Peer(id + "-parent", iceConfig);
+            peer.on('open', () => {
+                log("מחובר לשרת. מתחיל ניסיונות חיוג...");
+                aggressiveCall(id);
+            });
+        }
+
+        function aggressiveCall(targetId) {
+            status.innerText = "מנסה להתחבר למצלמה...";
+            const call = peer.call(targetId, null);
             
-            call.on('stream', (remoteStream) => {
-                status.innerText = "שידור חי פעיל! ✅";
+            call.on('stream', (stream) => {
+                log("קיבלתי שידור! ✅");
+                status.innerText = "שידור חי!";
                 const video = document.getElementById('v');
-                video.srcObject = remoteStream;
-                video.muted = true; // חובה להתחיל במיוט כדי שאנדרואיד יאפשר ניגון אוטומטי
+                video.srcObject = stream;
                 video.play();
-                document.getElementById('unmute-btn').style.display = 'block';
+                document.getElementById('audioBtn').style.display = 'block';
             });
 
-            // אם תוך 8 שניות אין תגובה, ננסה "לעורר" את החיבור
+            // אם אין שידור תוך 5 שניות, סוגר ומנסה שוב
             setTimeout(() => {
                 if (!document.getElementById('v').srcObject) {
-                    status.innerText = "אין תגובה. וודא שהקוד נכון והטלפון פועל.";
+                    log("ניסיון נכשל, מנסה שוב...");
+                    call.close();
+                    aggressiveCall(targetId);
                 }
-            }, 8000);
+            }, 5000);
+        }
+
+        function unmute() {
+            const v = document.getElementById('v');
+            v.muted = false;
+            document.getElementById('audioBtn').style.display = 'none';
         }
     </script>
 </body>

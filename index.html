@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html dir="rtl" lang="he">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>המוניטור שלי</title>
+    <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
+    <style>
+        body { font-family: system-ui, -apple-system, sans-serif; text-align: center; background: #1a1a1a; color: white; margin: 0; padding: 20px; }
+        .container { max-width: 600px; margin: auto; border: 1px solid #444; padding: 20px; border-radius: 15px; background: #2a2a2a; }
+        video { width: 100%; border-radius: 10px; margin-top: 10px; background: #000; }
+        input { padding: 10px; border-radius: 5px; border: none; width: 80%; margin: 10px 0; }
+        button { padding: 10px 20px; border-radius: 5px; border: none; background: #007bff; color: white; cursor: pointer; font-weight: bold; }
+        button:hover { background: #0056b3; }
+        #my-id-display { color: #00ff00; font-size: 1.2em; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>מוניטור תינוק DIY</h1>
+        <p>המזהה של המכשיר הזה: <span id="my-id-display">מתחבר...</span></p>
+        <hr>
+        <p>להורה: הכנס מזהה של התינוק:</p>
+        <input type="text" id="peer-id-input" placeholder="הדבק כאן את הקוד מהטאבלט">
+        <br>
+        <button onclick="startParentMode()">התחבר כצופה (הורה)</button>
+        <hr>
+        <video id="remote-video" autoplay playsinline></video>
+        <video id="local-video" autoplay muted playsinline style="width: 100px; position: fixed; bottom: 10px; right: 10px; border: 2px solid white;"></video>
+    </div>
+
+    <script>
+        const peer = new Peer();
+        let wakeLock = null;
+
+        // מניעת שינה של המכשיר
+        async function requestWakeLock() {
+            try {
+                if ('wakeLock' in navigator) {
+                    wakeLock = await navigator.wakeLock.request('screen');
+                    console.log('Wake Lock is active');
+                }
+            } catch (err) { console.error(`${err.name}, ${err.message}`); }
+        }
+
+        peer.on('open', (id) => {
+            document.getElementById('my-id-display').innerText = id;
+            requestWakeLock(); // הפעלת מניעת שינה
+        });
+
+        // צד התינוק (הטאבלט)
+        peer.on('call', (call) => {
+            navigator.mediaDevices.getUserMedia({video: { facingMode: "user" }, audio: true})
+            .then((stream) => {
+                document.getElementById('local-video').srcObject = stream;
+                call.answer(stream);
+            });
+        });
+
+        // צד ההורה (הטלפון)
+        function startParentMode() {
+            const babyId = document.getElementById('peer-id-input').value;
+            const call = peer.call(babyId, null);
+            call.on('stream', (remoteStream) => {
+                document.getElementById('remote-video').srcObject = remoteStream;
+            });
+        }
+    </script>
+</body>
+</html>

@@ -2,55 +2,82 @@
 <html dir="rtl" lang="he">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Safe Baby Monitor PRO 🔒</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Monitor Debug Mode</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        :root { --bg: #0f172a; --card: #1e293b; --primary: #3b82f6; --danger: #ef4444; --success: #22c55e; --text: #f8fafc; }
-        body { font-family: system-ui, -apple-system, sans-serif; background: var(--bg); color: var(--text); margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; min-height: 100vh; }
-        .card { width: 100%; max-width: 480px; background: var(--card); padding: 25px; border-radius: 24px; box-shadow: 0 10px 25px rgba(0,0,0,0.3); border: 1px solid #334155; box-sizing: border-box; }
-        h2 { margin-top: 0; font-size: 1.6em; color: #fff; }
-        input { width: 100%; padding: 15px; margin: 15px 0; border-radius: 12px; border: 2px solid #334155; background: var(--bg); color: white; text-align: center; font-size: 1.1em; box-sizing: border-box; }
-        input:focus { border-color: var(--primary); outline: none; }
-        .btn-group { display: flex; flex-direction: column; gap: 12px; }
-        .btn { width: 100%; padding: 16px; border-radius: 12px; border: none; font-weight: bold; font-size: 1.1em; cursor: pointer; transition: 0.2s; color: white; }
-        .btn-baby { background: var(--danger); }
-        .btn-parent { background: var(--success); }
-        .btn-retry { background: #64748b; margin-top: 15px; display: none; }
-        .btn:active { transform: scale(0.98); opacity: 0.9; }
-        #monitor-area { margin-top: 20px; width: 100%; }
-        video { width: 100%; border-radius: 16px; background: #000; display: none; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
-        .status-box { background: rgba(0,0,0,0.2); padding: 10px; border-radius: 8px; margin: 10px 0; font-size: 0.9em; color: #94a3b8; }
-        #status-msg { color: #fbbf24; font-weight: 500; }
+        body { font-family: monospace; background: #000; color: #0f0; padding: 20px; }
+        .log { border: 1px solid #0f0; padding: 10px; height: 150px; overflow-y: scroll; font-size: 12px; margin-bottom: 20px; }
+        input, button { width: 100%; padding: 15px; margin: 5px 0; font-size: 18px; }
+        video { width: 100%; background: #222; margin-top: 10px; }
     </style>
 </head>
 <body>
+    <h3>בדיקת מערכת מוניטור</h3>
+    <div id="log" class="log">מוכן...</div>
+    
+    <input type="text" id="sid" placeholder="מזהה סודי">
+    <button onclick="asBaby()" style="background:#400; color:white">הפעל כמצלמה</button>
+    <button onclick="asParent()" style="background:#040; color:white">הפעל כצופה</button>
 
-    <div class="card">
-        <h2>מוניטור בטוח 🔒</h2>
-        
-        <input type="text" id="secret-id" placeholder="הכנס מזהה סודי (למשל: baby77)">
-        
-        <div id="mode-selection" class="btn-group">
-            <button class="btn btn-baby" onclick="setupBaby()">שדר מהטלפון (מצלמה אחורית)</button>
-            <button class="btn btn-parent" onclick="setupParent()">צפה מהטאבלט (הורה)</button>
-        </div>
-
-        <div id="monitor-area">
-            <div class="status-box">סטטוס: <span id="status-msg">ממתין לבחירה...</span></div>
-            <video id="remote-video" autoplay playsinline></video>
-            <video id="local-video" autoplay muted playsinline></video>
-            <button id="retry-btn" class="btn btn-retry" onclick="setupParent()">לא מתחבר? נסה שוב</button>
-        </div>
-    </div>
+    <video id="v" autoplay playsinline muted></video>
 
     <script>
-        let peer = null;
-        let localStream = null;
-        let wakeLock = null;
+        const log = (msg) => {
+            const div = document.getElementById('log');
+            div.innerHTML += `> ${msg}<br>`;
+            div.scrollTop = div.scrollHeight;
+        };
 
-        // שרתי Google STUN לעקיפת חסימות ברשת ה-WiFi
-        const peerConfig = {
-            config: { 
-                'iceServers': [
-                    { 'urls': 'stun
+        let peer = null;
+
+        function asBaby() {
+            const id = document.getElementById('sid').value;
+            log("מתחיל מצב מצלמה...");
+            
+            navigator.mediaDevices.getUserMedia({video: {facingMode:"environment"}, audio:true})
+            .then(stream => {
+                log("מצלמה אושרה ✅");
+                document.getElementById('v').srcObject = stream;
+                
+                peer = new Peer(id);
+                peer.on('open', () => log("רשום בשרת! מזהה: " + id));
+                peer.on('call', call => {
+                    log("!! שיחה נכנסת מההורה !!");
+                    call.answer(stream);
+                    log("עניתי לשיחה. השידור אמור להתחיל.");
+                });
+                peer.on('error', e => log("שגיאה: " + e.type));
+            })
+            .catch(e => log("שגיאת מצלמה: " + e.message));
+        }
+
+        function asParent() {
+            const id = document.getElementById('sid').value;
+            log("מתחיל מצב הורה...");
+            
+            peer = new Peer(id + "-parent");
+            peer.on('open', () => {
+                log("מחובר לשרת. מחייג למזהה: " + id);
+                const call = peer.call(id, null);
+                
+                log("החיוג בוצע. ממתין לתגובה...");
+                
+                call.on('stream', remoteStream => {
+                    log("קיבלתי וידאו! ✅✅");
+                    const vid = document.getElementById('v');
+                    vid.muted = false;
+                    vid.srcObject = remoteStream;
+                });
+
+                setTimeout(() => {
+                    if (!document.getElementById('v').srcObject) {
+                        log("שגיאה: עברו 10 שניות ואין וידאו. המצלמה לא ענתה.");
+                    }
+                }, 10000);
+            });
+            peer.on('error', e => log("שגיאת התחברות: " + e.type));
+        }
+    </script>
+</body>
+</html>

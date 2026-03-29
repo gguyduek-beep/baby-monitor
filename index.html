@@ -3,119 +3,117 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Safe Baby Monitor v3</title>
+    <title>Safe Baby Monitor PRO</title>
     <script src="https://unpkg.com/peerjs@1.5.2/dist/peerjs.min.js"></script>
     <style>
-        body { font-family: system-ui, sans-serif; text-align: center; background: #121212; color: #e0e0e0; margin: 0; padding: 15px; }
-        .card { width: 100%; max-width: 450px; border: 1px solid #333; padding: 25px; border-radius: 25px; background: #1e1e1e; margin: auto; box-sizing: border-box; }
-        video { width: 100%; border-radius: 15px; margin-top: 15px; background: #000; border: 1px solid #444; min-height: 200px; }
-        input { padding: 15px; border-radius: 12px; border: 1px solid #444; width: 90%; margin: 15px 0; background: #2a2a2a; color: white; text-align: center; font-size: 1.1em; }
-        .btn { padding: 18px; border-radius: 15px; border: none; cursor: pointer; font-weight: bold; margin: 10px 0; width: 100%; font-size: 1.1em; }
-        .btn-baby { background: #ff4757; color: white; }
-        .btn-parent { background: #2ed573; color: white; }
-        .status { margin: 15px 0; font-size: 1em; color: #ffa502; font-weight: 500; min-height: 1.5em; }
-        #local-video { display: none; }
+        body { font-family: system-ui, sans-serif; text-align: center; background: #0f172a; color: #f8fafc; margin: 0; padding: 15px; }
+        .card { width: 100%; max-width: 450px; border: 1px solid #1e293b; padding: 25px; border-radius: 30px; background: #1e293b; margin: auto; box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1); }
+        video { width: 100%; border-radius: 20px; margin-top: 15px; background: #000; min-height: 250px; object-fit: cover; }
+        input { padding: 15px; border-radius: 15px; border: 1px solid #334155; width: 90%; margin: 15px 0; background: #0f172a; color: white; text-align: center; font-size: 1.2em; }
+        .btn { padding: 18px; border-radius: 15px; border: none; cursor: pointer; font-weight: bold; margin: 10px 0; width: 100%; font-size: 1.1em; transition: transform 0.1s; }
+        .btn:active { transform: scale(0.98); }
+        .btn-baby { background: #ef4444; color: white; }
+        .btn-parent { background: #22c55e; color: white; }
+        .btn-retry { background: #64748b; color: white; display: none; margin-top: 10px; }
+        .status { margin: 15px 0; font-size: 0.9em; color: #94a3b8; line-height: 1.4; }
+        #local-video { border: 2px solid #ef4444; }
     </style>
 </head>
 <body>
     <div class="card">
-        <h2>מוניטור בטוח 🔒</h2>
-        <input type="text" id="secret-id" placeholder="הכנס מזהה סודי (למשל: baby77)">
+        <h2>מוניטור בטוח PRO 🔒</h2>
+        <input type="text" id="secret-id" placeholder="בחר מזהה (למשל: baby123)">
         
         <div id="mode-selection">
-            <button class="btn btn-baby" onclick="setupBaby()">זה הטלפון (מצלמה אחורית)</button>
-            <button class="btn btn-parent" onclick="setupParent()">זה הטאבלט (צופה)</button>
+            <button class="btn btn-baby" onclick="setupBaby()">שדר מהטלפון (מצלמה)</button>
+            <button class="btn btn-parent" onclick="setupParent()">צפה מהטאבלט (הורה)</button>
         </div>
 
         <div id="monitor-area">
-            <p class="status" id="status-msg">ממתין לבחירה...</p>
-            <video id="remote-video" autoplay playsinline></video>
-            <video id="local-video" autoplay muted playsinline></video>
+            <p class="status" id="status-msg">מוכן לתחילת עבודה</p>
+            <video id="remote-video" autoplay playsinline style="display:none;"></video>
+            <video id="local-video" autoplay muted playsinline style="display:none;"></video>
+            <button id="retry-btn" class="btn btn-retry" onclick="setupParent()">לא מתחבר? נסה שוב</button>
         </div>
     </div>
 
     <script>
         let peer = null;
-        let currentStream = null;
+        let stream = null;
 
-        function cleanup() {
-            if (peer) {
-                peer.destroy();
-                peer = null;
-            }
+        // הגדרות שרתים של גוגל לעקיפת חסימות רשת
+        const peerConfig = {
+            config: { 'iceServers': [{ 'urls': 'stun:stun.l.google.com:19302' }, { 'urls': 'stun:stun1.l.google.com:19302' }] }
+        };
+
+        function setStatus(msg) {
+            document.getElementById('status-msg').innerText = msg;
+            console.log(msg);
         }
 
-        async function initPeer(id) {
-            cleanup(); // ניקוי חיבורים קודמים
-            peer = new Peer(id);
-            
-            peer.on('open', (openedId) => {
-                document.getElementById('status-msg').innerText = "מוכן! המזהה פעיל: " + openedId;
-            });
-
-            peer.on('error', (err) => {
-                if (err.type === 'unavailable-id') {
-                    document.getElementById('status-msg').innerText = "שגיאה: המזהה תפוס. נסה להוסיף ספרה לשם.";
-                } else {
-                    document.getElementById('status-msg').innerText = "שגיאה בחיבור: " + err.type;
-                }
-            });
-        }
-
-        // --- טלפון (תינוק) ---
+        // --- צד המצלמה (טלפון) ---
         async function setupBaby() {
             const id = document.getElementById('secret-id').value;
-            if (!id) return alert("בבקשה הכנס מזהה סודי!");
+            if (!id) return alert("הכנס מזהה סודי!");
 
             document.getElementById('mode-selection').style.display = 'none';
-            document.getElementById('status-msg').innerText = "מפעיל מצלמה אחורית...";
+            setStatus("מפעיל מצלמה...");
 
             try {
-                // שימוש במצלמה אחורית (environment)
-                currentStream = await navigator.mediaDevices.getUserMedia({ 
+                stream = await navigator.mediaDevices.getUserMedia({ 
                     video: { facingMode: "environment" }, 
                     audio: true 
                 });
-                
-                document.getElementById('local-video').srcObject = currentStream;
+                document.getElementById('local-video').srcObject = stream;
                 document.getElementById('local-video').style.display = 'block';
-                
-                initPeer(id);
 
+                peer = new Peer(id, peerConfig);
+                
+                peer.on('open', () => setStatus("המצלמה מוכנה! המזהה: " + id));
                 peer.on('call', (call) => {
-                    call.answer(currentStream);
-                    document.getElementById('status-msg').innerText = "מחובר! ההורה צופה כרגע.";
+                    setStatus("הורה התחבר! שידור פעיל.");
+                    call.answer(stream);
+                });
+                
+                peer.on('error', (err) => {
+                    if(err.type === 'unavailable-id') setStatus("המזהה תפוס. רענן ושנה שם.");
+                    else setStatus("שגיאה: " + err.type);
                 });
 
-            } catch (err) {
-                document.getElementById('status-msg').innerText = "שגיאה בגישה למצלמה: " + err.message;
-            }
+            } catch (e) { setStatus("שגיאה בגישה למצלמה: " + e.message); }
         }
 
-        // --- טאבלט (הורה) ---
+        // --- צד ההורה (טאבלט) ---
         function setupParent() {
             const id = document.getElementById('secret-id').value;
-            if (!id) return alert("בבקשה הכנס מזהה סודי!");
+            if (!id) return alert("הכנס מזהה סודי!");
 
             document.getElementById('mode-selection').style.display = 'none';
-            document.getElementById('status-msg').innerText = "מתחבר...";
-            
-            // המזהה של ההורה חייב להיות שונה במעט משל התינוק
-            initPeer(id + "-viewer");
+            document.getElementById('retry-btn').style.display = 'block';
+            setStatus("מחפש את המצלמה...");
 
-            setTimeout(() => {
-                document.getElementById('status-msg').innerText = "מתקשר למצלמה...";
+            if (peer) peer.destroy();
+            peer = new Peer(id + "-parent", peerConfig);
+
+            peer.on('open', () => {
+                setStatus("מנסה להתחבר למזהה: " + id + "...");
                 const call = peer.call(id, null);
                 
                 call.on('stream', (remoteStream) => {
-                    document.getElementById('remote-video').srcObject = remoteStream;
-                    document.getElementById('status-msg').innerText = "שידור חי פעיל!";
+                    setStatus("שידור חי פעיל! ✅");
+                    const v = document.getElementById('remote-video');
+                    v.srcObject = remoteStream;
+                    v.style.display = 'block';
+                    document.getElementById('retry-btn').style.display = 'none';
                 });
 
-                call.on('error', (err) => {
-                    document.getElementById('status-msg').innerText = "השיחה נכשלה. וודא שהטלפון דולק ומחובר.";
-                });
-            }, 3000);
+                // טיימר למקרה שהשיחה לא נענית
+                setTimeout(() => {
+                    if (document.getElementById('remote-video').style.display === 'none') {
+                        setStatus("לא נמצאה מצלמה. וודא שהטלפון משדר.");
+                    }
+                }, 7000);
+            });
         }
     </script>
 </body>
